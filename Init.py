@@ -19,25 +19,32 @@ class qTLExperiment:
         #retrieve TAT.XML
         
     def ReadInMetaData(self):
-        TATAvailable = not bool(self.TATXML_File) #Evals to true if TATexp.xml is not found
-        if TATAvailable:
+        TATAvailable = not bool(self.TATXML_File)# FALSE if TATexp.xml found
+        if TATAvailable:                                                        #Alternative MetaData parsing
             print('Is not there')
-        else:
-            #Parse XML strucutre as root
+        else:                                                                    #Parse TATexp.XML strucutre as root                                                                    
             self.TATXML = ET.parse(self.Directory + '/' + self.TATXML_File).getroot() #Parse XML strucutre as root
             
-        #Now we can start retrieving the MetaData information from the TATXML
-        self.PositionCount = int(self.TATXML.find('./PositionCount').attrib['count']) #Is dictionary
-        PositionData       = int(self.TATXML.find('./PositionData').attrib['count']) #Is dictionary
+            #Retrieve MetaData information from the TATXML
+            root = self.TATXML
+            self.PositionCount      = int(root.find('./PositionCount').attrib['count']) #Is dictionary
+            self.PositionX          = [float(pos.attrib['posX']) for pos in root.findall('./PositionData/PositionInformation/')]
+            self.PositionY          = [float(pos.attrib['posY']) for pos in root.findall('./PositionData/PositionInformation/')]  
+            self.PositionCondition  = [pos.attrib['comments'].split('] ')[1] for pos in root.findall('./PositionData/PositionInformation/')] 
+            self.PositionName       = [pos.attrib['comments'].split(' [')[0] for pos in root.findall('./PositionData/PositionInformation/')] 
+            self.PositionIndex      = [int(pos.attrib['index']) for pos in root.findall('./PositionData/PositionInformation/')] 
 
+            self.WavelengthCount    = int(root.find('./WavelengthCount').attrib['count']) 
+            self.WavelengthComment  = [wl.attrib['Comment'] for wl in root.findall('./WavelengthData/WavelengthInformation/')]
+            SuffixTemplate          = 'w00'
+            self.WavelengthSuffix   = [(SuffixTemplate[0:len(SuffixTemplate)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]
+            #PositionData       = int(self.TATXML.find('./PositionData').attrib['count']) #Is dictionary
+                
+            # Which channels for Segmentation, which for Quantification?
+            
         
 #ExperimentDir=filedialog.askdirectory(title="########### PLEASE SELECT Working Directory ###########") #Should contain MetaData File
         
 Mov=qTLExperiment('T:/TimelapseData/16bit/AW_donotdelete_16bit/200708AW11_16bit/')
 Mov.CheckType()
 Mov.ReadInMetaData()
-
-
-for a in root.findall('./PositionData/PositionInformation/'):
-    print(a.attrib)
-    
