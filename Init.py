@@ -36,3 +36,8 @@ class qTLExperiment:
 Mov=qTLExperiment('T:/TimelapseData/16bit/AW_donotdelete_16bit/200708AW11_16bit/')
 Mov.CheckType()
 Mov.ReadInMetaData()
+
+
+for a in root.findall('./PositionData/PositionInformation/'):
+    print(a.attrib)
+    
