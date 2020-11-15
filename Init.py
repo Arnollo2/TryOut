@@ -12,17 +12,17 @@ import xml.etree.ElementTree as ET #needed to read in XML
 
 class qTLExperiment:
     
-    def __init__(self,Directory, MovieName, SegmentationMethod = 'Overlay', SegmentationChannel = ['BF1', 'BF2'], QuantificationChannel = ['PE','NIR','Al488']):
+    def __init__(self,Directory, MovieName, SegmentationMethod = 'Overlay', Wavelength_Segment = ['BF1', 'BF2'], Wavelength_Quant = ['PE','NIR','Al488']):
         self.Directory          = Directory
         self.MovieName          = MovieName
         self.Segmentation       = SegmentationMethod
-        self.Wavelength_Segment = SegmentationChannel
-        self.Wavelength_Quant   = QuantificationChannel
+        self.Wavelength_Segment = Wavelength_Segment
+        self.Wavelength_Quant   = Wavelength_Quant
         
-        if type(self.Wavelength_Segment) == 'str': #Convert to list to make interateable if only one was provided
+        if isinstance(self.Wavelength_Segment, str): #Convert to list to make interateable if only one was provided
             self.Wavelength_Segment = [self.Wavelength_Segment]
             
-        if type(self.Wavelength_Quant) == 'str': #Convert to list to make interateable if only one was provided
+        if isinstance(self.Wavelength_Quant, str): #Convert to list to make interateable if only one was provided
             self.Wavelength_Quant   = [self.Wavelength_Quant]
 
     def CheckType(self): #Check wether TAT.XML is inside given Directory
@@ -70,7 +70,7 @@ class qTLExperiment:
         if SegmentSuffix: #False if empty
             self.WavelengthSuffix_Segment = SegmentSuffix #already in right format: Wavelength file suffix
         elif SegmentComment: #False if empty
-            SegmentWL_Comment_Idx= [i for i in range(0,len(self.WavelengthComment)) if self.WavelengthComment[i] in self.SegmentationChannel]
+            SegmentWL_Comment_Idx= [i for i in range(0,len(self.WavelengthComment)) if self.WavelengthComment[i] in self.Wavelength_Segment]
             self.WavelengthSuffix_Segment = self.WavelengthSuffix[SegmentWL_Comment_Idx]
         else:
             print('Error: Please Provide at least one available Wavelength in Movie for Segmentation with variable \'SegmentationChannel\'! ' +
@@ -79,7 +79,7 @@ class qTLExperiment:
 #ExperimentDir=filedialog.askdirectory(title="########### PLEASE SELECT Working Directory ###########") #Should contain MetaData File
 MovieName   = '200708AW11_16bit'
 MovieDir    = 'T:/TimelapseData/16bit/AW_donotdelete_16bit/200708AW11_16bit/'
-Mov         = qTLExperiment(MovieDir, MovieName)
+Mov         = qTLExperiment(MovieDir, MovieName,   Wavelength_Segment= 'BF')
 
 Mov.CheckType()
 Mov.ReadInMetaData()
