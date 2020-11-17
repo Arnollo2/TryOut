@@ -33,7 +33,7 @@ class qTLExperiment:
         
         
     def ReadMetaData(self): #Check wether TAT.XML is inside given Directory
-        self.TATXML_File = [fi for fi in os.listdir(self.Directory) if 'TATexp.xml' in fi]
+        self.TATXML_File     = [fi for fi in os.listdir(self.Directory) if 'TATexp.xml' in fi]
         
         TATAvailable = not bool(self.TATXML_File)                               #### Check if TATexp.xml found, will eval to False if found
         
@@ -63,7 +63,7 @@ class qTLExperiment:
         self.ZstackSuffix_standard      = 'z000'
         self.PositionSuffix_standard    = 'p0000'
         
-        MovieNameSplit                  = self.Directory.split('/')
+        MovieNameSplit                  = self.MovieDirectory.split('/')
         MovieNameSplit                  =[i for i in MovieNameSplit if i !=''] #'' is created for a '/' not followed by alphanumerical
         self.MovieName                  =MovieNameSplit[len(MovieNameSplit)-1]   #After split and clean, the last entry should be MovieID
         
@@ -81,15 +81,12 @@ class qTLExperiment:
         self.PositionIndex      = [int(pos.attrib['index']) for pos in root.findall('./PositionData/PositionInformation/')] 
         self.PositionSuffix     = [(self.PositionSuffix_standard[0:len(self.PositionSuffix_standard)-len(str(pos))] + str(pos)) for pos in self.PositionIndex]
         
-        #Create PositonFolder list
-        PositionDirs            = os.listdir(self.Directory)
-        self.PositionDirs       = [(self.MovieDirectory + pos ) for pos in PositionDirs if  os.path.isdir(self.MovieDirectory + pos) & (sum((possuffix in pos) for possuffix in self.PositionSuffix)==1)] #only list positions if dir and contains specified position suffix
-        
+
         #Create Trackers of Progress and IDs
         self.lastTPchecked      = [0 for i in self.PositionIndex] #to check last iterated TP per Position
         self.WavelengthCount    = int(root.find('./WavelengthCount').attrib['count']) 
         self.WavelengthComment  = [wl.attrib['Comment'] for wl in root.findall('./WavelengthData/WavelengthInformation/')]
-        self.WavelengthSuffix   = [(self.WavelengthSuffix_standard[1:len(self.WavelengthSuffix_standard)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]        #has to start subsetting WavelengthSuffix_standard at 1 not 0 because intial char is suffix for recognition
+        self.WavelengthSuffix   = [(self.WavelengthSuffix_standard[0:len(self.WavelengthSuffix_standard)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]        #has to start subsetting WavelengthSuffix_standard at 1 not 0 because intial char is suffix for recognition
         
         #Get WL suffix for Segment and Quantifications
         self.GetWLsuffix_SegmentAndQuant()
@@ -108,14 +105,12 @@ class qTLExperiment:
                     self.ImageFormat                = row[1]
                 if row[0] == 'MovieDirectory':
                     self.MovieDirectory             = row[1]
-                if row[0] == 'MovieName':
-                    self.MovieName                  = row[1]
                 if row[0] == 'OutputDirectory':
                     self.OutputDirectory            = row[1]
                 if row[0] == 'WavelengthCount':
                     self.WavelengthCount            = int(row[1])
-                if row[0] == 'MovieName':
-                    self.WavelengthComment          = row[1]
+                if row[0] == 'WavelengthComment':
+                    self.WavelengthComment          = row[1].split(', ')
                 if row[0] == 'WavelengthSuffix_standard':
                     self.WavelengthSuffix_standard  = row[1]
                 if row[0] == 'TimeSuffix_standard':
@@ -123,17 +118,26 @@ class qTLExperiment:
                 if row[0] == 'PositionSuffix_standard':
                     self.PositionSuffix_standard    = row[1]
                     
-        ### Not working yet. does not distinguish between Chars and Ints in suffix
-        self.WavelengthSuffix   = [(self.WavelengthSuffix_standard[1:len(self.WavelengthSuffix_standard)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]       
+        #Check if wavelengthSuffix is parsed with or without 0 place holders  and get Segment and QUant suffixes   
+        NumberOfPlaceholders_WLSuffix    = self.WavelengthSuffix_standard.count('0')
+        if NumberOfPlaceholders_WLSuffix == 0:
+            self.WavelengthSuffix           = [(self.WavelengthSuffix_standard + str(wl)) for wl in range(0,self.WavelengthCount)]       
+        else:
+            self.WavelengthSuffix           = [(self.WavelengthSuffix_standard[0:len(self.WavelengthSuffix_standard)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]       
         
-        # These attributes can only be assigned when provided specifically. Not necessary for gerneal operation
+        if len(self.WavelengthComment) != self.WavelengthCount:
+            print('Error: Please provide names of acquired channels with \'WavelengthComment\' in MetaData.txt. Must be same amount of names as Number of Channels in \'WavelengthCount\'. Expected number of Names: %s ' %str(self.WavelengthCount))
+        else: # Match Segmentation and Quantification Channels
+            self.GetWLsuffix_SegmentAndQuant()
+        
+        # These attributes can only be assigned when provided specifically. Not necessary for general operation
         self.PositionX          = None
         self.PositionY          = None
         self.PositionCondition  = None
         self.PositionName       = None
         self.PositionIndex      = None
-        
-        
+       
+
 
     def GetWLsuffix_SegmentAndQuant(self):
         #### which WL should be used for Segmentation or Quant ####
@@ -170,7 +174,32 @@ class qTLExperiment:
             else:
                 print ("Successfully created Output directory %s " % self.OutputDirectory)
                 
-    def CreateIterable(self): 
+    def ScanPositionsAndCreateIterable(self):      
+         ### Create PositionDirs
+         
+        TATAvailable =  bool(self.TATXML_File)                               #### Check if TATexp.xml found, will eval to True if found
+
+        if TATAvailable: # YouScope Experiment
+            #Create PositonFolder list
+            PositionDirs            = os.listdir(self.Directory)
+            self.PositionDirs       = [(self.MovieDirectory + pos ) for pos in PositionDirs if  os.path.isdir(self.MovieDirectory + pos) & (sum((possuffix in pos) for possuffix in self.PositionSuffix)==1)] #only list positions if dir and contains specified position suffix
+            #Create Iterable
+            self.CreatePositionIterableFromDirs()
+        else:           #Alternative Experiment
+            #First check if Positions are folders within MovieDirectory or if all images are dumped in one directory
+            NumberOfPlaceholders_PosSuffix    = self.PositionSuffix_standard.count('0')
+            PosSuffix_Stripped                = self.PositionSuffix_standard[0:(len(self.PositionSuffix_standard)-NumberOfPlaceholders_PosSuffix)]
+            self.PositionDirs = [pos for pos in os.listdir(self.MovieDirectory) if os.path.isdir(self.MovieDirectory + '/' + pos) & (PosSuffix_Stripped in pos) ]
+            
+            #Now if self.PositionDirs is emtpy we know that PositionDirs not Provided
+            if bool(self.PositionDirs): #Will eval to True if positions found
+                self.CreatePositionIterableFromDirs()
+            else:
+                #Now we have to Create PositionIterable differently.
+                blabla
+                
+
+    def CreatePositionIterableFromDirs(self):
         #Get Segmentation Images per position 
         #This will create a List with image names, or if multiple images found per position a list of lists, with a list for every position
         #self.Position2beIterated = [glob.glob(pos + '/*' + self.WavelengthSuffix_Segment[0] + '*' + self.ImageFormat) for pos in self.PositionDirs]
@@ -178,7 +207,7 @@ class qTLExperiment:
         for i in range(0,len(self.Position2beIterated)):
             #only check for images to be segmented
             self.Position2beIterated[i] = [img for img in self.Position2beIterated[i] if (self.WavelengthSuffix_Segment[0] in img) & (self.ImageFormat in img) ]
-           
+            
     def TrackIterable(self, currentPosition_Index,currentTP):
         #currentTP will be parsed from image name
         #Register the lastTPChecked per Position and clear the respective Position2beIterated entry
@@ -188,7 +217,7 @@ class qTLExperiment:
         
     def UpdateIterable(self):
         #Check images per Position 
-        self.CreateIterable()
+        self.ScanPositionsAndCreateIterable()
         #Remove all Images before and including latest lastTPchecked entry
         for i in range(0,len(self.Position2beIterated)):
             FilesFoundInPosition        = self.Position2beIterated[i]
@@ -215,7 +244,7 @@ def CreateIterator(self, currentPosition_Index):
 
 #Test for Alternative.xml
 Directory   ='N:/schroeder/Data/AW/PAPER-OMAwithDS/Leica/200301GC50'
-Mov         = qTLExperiment(Directory, delimiter='\t')
+Mov         = qTLExperiment(Directory, delimiter='\t',Wavelength_Segment= 'BF',Wavelength_Quant= ['BF','APC'])
 
 
 
@@ -226,7 +255,7 @@ Mov         = qTLExperiment(MovieDir, ImageFormat='.png',  Wavelength_Segment= '
 
 #Check for available images per position
 start_time = time.time()
-Mov.CreateIterable()
+Mov.ScanPositionsAndCreateIterable()
 print("--- %s seconds ---" % (time.time() - start_time))
 
 #Should be a full list with exactly one t00001 iamge w00 per entry
@@ -245,3 +274,4 @@ print("--- %s seconds ---" % (time.time() - start_time))
 Mov.Position2beIterated
 
 #Works
+
