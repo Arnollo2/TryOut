@@ -89,7 +89,7 @@ class qTLExperiment:
         self.lastTPchecked      = [0 for i in self.PositionIndex] #to check last iterated TP per Position
         self.WavelengthCount    = int(root.find('./WavelengthCount').attrib['count']) 
         self.WavelengthComment  = [wl.attrib['Comment'] for wl in root.findall('./WavelengthData/WavelengthInformation/')]
-        self.WavelengthSuffix   = [(self.WavelengthSuffix_standard[0:len(self.WavelengthSuffix_standard)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]       
+        self.WavelengthSuffix   = [(self.WavelengthSuffix_standard[1:len(self.WavelengthSuffix_standard)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]        #has to start subsetting WavelengthSuffix_standard at 1 not 0 because intial char is suffix for recognition
         
         #Get WL suffix for Segment and Quantifications
         self.GetWLsuffix_SegmentAndQuant()
@@ -97,35 +97,43 @@ class qTLExperiment:
         
     def ReadMetaData_Alternative(self): 
         #### Alternative MetaData parsing ####
-        
+        #We already checked that MetaData.txt is available
+        #so read it in
         with open(self.Directory + '/' + self.MetaData_File[0]) as csvfile:
             reader = csv.reader(csvfile, delimiter = self.Delimiter)
             for row in reader:
-                print(row)
+                if row[0] == 'MovieName':
+                    self.MovieName                  = row[1]
+                if row[0] == 'ImageFormat':
+                    self.ImageFormat                = row[1]
+                if row[0] == 'MovieDirectory':
+                    self.MovieDirectory             = row[1]
+                if row[0] == 'MovieName':
+                    self.MovieName                  = row[1]
+                if row[0] == 'OutputDirectory':
+                    self.OutputDirectory            = row[1]
+                if row[0] == 'WavelengthCount':
+                    self.WavelengthCount            = int(row[1])
+                if row[0] == 'MovieName':
+                    self.WavelengthComment          = row[1]
+                if row[0] == 'WavelengthSuffix_standard':
+                    self.WavelengthSuffix_standard  = row[1]
+                if row[0] == 'TimeSuffix_standard':
+                    self.TimeSuffix_standard        = row[1]
+                if row[0] == 'PositionSuffix_standard':
+                    self.PositionSuffix_standard    = row[1]
+                    
+        ### Not working yet. does not distinguish between Chars and Ints in suffix
+        self.WavelengthSuffix   = [(self.WavelengthSuffix_standard[1:len(self.WavelengthSuffix_standard)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]       
         
-        #We already checked that MetaData.txt is available
-        #so read it in
+        # These attributes can only be assigned when provided specifically. Not necessary for gerneal operation
+        self.PositionX          = None
+        self.PositionY          = None
+        self.PositionCondition  = None
+        self.PositionName       = None
+        self.PositionIndex      = None
         
         
-        self.MovieName                 = None
-        self.MovieDirectory            = self.Directory                                                                                                                            
-        self.OutputDirectory           = self.MovieDirectory + '/Analysis/OnlineMovieAnalysis/'
-        self.WavelengthSuffix_standard = 'w00'
-        self.TimeSuffix_standard       = 't00000'
-        self.ZstackSuffix_standard     = 'z000'
-        self.PositionSuffix_standard   = 'p0000'
-        
-        self.WavelengthCount    = None
-        self.WavelengthComment  = None
-        # self.PositionX          = None
-        # self.PositionY          = None
-        # self.PositionCondition  = None
-        # self.PositionName       = None
-        # self.PositionIndex      = None
-        self.WavelengthCount    = None
-        self.WavelengthComment  = None
-        self.WavelengthSuffix   = None
-        self.OutputDirectory    = None
 
     def GetWLsuffix_SegmentAndQuant(self):
         #### which WL should be used for Segmentation or Quant ####
