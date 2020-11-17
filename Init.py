@@ -4,84 +4,130 @@ Created on Wed Nov 11 22:24:18 2020
 
 @author: awehling
 """
-import tkinter as tk #needed to import UI Dir
-from tkinter import filedialog  #To ask user to specify the Movie Directory
-import os #needed to query directories for files
-import xml.etree.ElementTree as ET #needed to read in XML
-import glob
+import tkinter as tk                #needed to import UI Dir
+from tkinter import filedialog      #To ask user to specify the Movie Directory
+
+import os                           # to query directories for files
+import xml.etree.ElementTree as ET  # to read in TATexp.xml if needed
+import csv                          # to read in MetaData.txt if needed
+#import glob                        # not used currently but os library instead
 import time
 
 class qTLExperiment:
     
-    def __init__(self,Directory, MovieName = None, OutputDirectory = None,  SegmentationMethod = 'Overlay', Wavelength_Segment = ['BF1', 'BF2'], Wavelength_Quant = [], ImageFormat='.tiff'):
-        self.Directory              = Directory
-        self.MovieName              = MovieName
+    def __init__(self,Directory, MovieName = None, SegmentationMethod = 'Overlay', Wavelength_Segment = ['BF1', 'BF2'], Wavelength_Quant = [], ImageFormat='.tiff', delimiter = ';'):
+        #Directory must either contain File ending with MetaData.txt or be a YouScope Experiment with TATexp.xml
+        self.Directory              = Directory      
         self.Segmentation           = SegmentationMethod
         self.Wavelength_Segment     = Wavelength_Segment
         self.Wavelength_Quant       = Wavelength_Quant
         self.ImageFormat            = ImageFormat
-
+        self.Delimiter              = delimiter
         if isinstance(self.Wavelength_Segment, str): #Convert to list to make interateable if only one was provided
             self.Wavelength_Segment = [self.Wavelength_Segment]
             
         if isinstance(self.Wavelength_Quant, str): #Convert to list to make interateable if only one was provided
             self.Wavelength_Quant   = [self.Wavelength_Quant]
-
-    def CheckType(self): #Check wether TAT.XML is inside given Directory
-        self.TATXML_File = [fi for fi in os.listdir(self.Directory) if 'TATexp.xml' in fi][0]
+            
+        self.ReadMetaData()
         
-    ## retrieve TAT.XML    
-    def ReadInMetaData(self):
-        TATAvailable = not bool(self.TATXML_File)                               #### Check if TATexp.xml found
+        
+    def ReadMetaData(self): #Check wether TAT.XML is inside given Directory
+        self.TATXML_File = [fi for fi in os.listdir(self.Directory) if 'TATexp.xml' in fi]
+        
+        TATAvailable = not bool(self.TATXML_File)                               #### Check if TATexp.xml found, will eval to False if found
         
         if TATAvailable:                                                        #### Alternative MetaData parsing ####
-            print('No TATexp.XMLfound --> Alternative Parsing')
             
-            self.PositionCount      = None
-            self.PositionX          = None
-            self.PositionY          = None
-            self.PositionCondition  = None
-            self.PositionName       = None
-            self.PositionIndex      = None
-            self.WavelengthCount    = None
-            self.WavelengthComment  = None
-            self.WavelengthSuffix   = None
-            self.OutputDirectory    = None
-        else:                                                                    #### Parse TATexp.XML ####                                                                   
+            print('No TATexp.XMLfound, searching for MetaData.txt')
+            self.MetaData_File = [fi for fi in os.listdir(self.Directory) if 'MetaData.txt' in fi]
+            if not bool(self.MetaData_File):
+                print('Error: No MetaData.txt file found, please provide in specified directory')
+            else:
+                print('MetaData.txt file found --> start Alternative Parsing')
+                self.ReadMetaData_Alternative()
+                
+        else:                                                                   #### Parse TATexp.XML ####
             print('TATexp.XMLfound --> Parsing')
-            self.OutputDirectory    = self.Directory + '/Analysis/OnlineMovieAnalysis/'
+            self.ReadMetaData_TATXML()
             
-            if not os.path.isdir(self.OutputDirectory):
-                try:
-                    os.mkdir(self.OutputDirectory)
-                except OSError:
-                    print ("Creation of the directory %s failed" % self.OutputDirectory)
-                else:
-                    print ("Successfully created the directory %s " % self.OutputDirectory)
-            
-            self.WavelengthSuffix_standard   = 'w00'
-            self.TimeSuffix_standard         = 't00000'
-            self.ZstackSuffix_standard       = 'z000'
-            self.PositionSuffix_standard     = 'p0000'
-            
-            self.TATXML = ET.parse(self.Directory + '/' + self.TATXML_File).getroot() #Parse XML strucutre as root
-            root = self.TATXML                       
-            self.PositionCount      = int(root.find('./PositionCount').attrib['count']) #Is dictionary
-            self.PositionX          = [float(pos.attrib['posX']) for pos in root.findall('./PositionData/PositionInformation/')]
-            self.PositionY          = [float(pos.attrib['posY']) for pos in root.findall('./PositionData/PositionInformation/')]  
-            self.PositionCondition  = [pos.attrib['comments'].split('] ')[1] for pos in root.findall('./PositionData/PositionInformation/')] 
-            self.PositionName       = [pos.attrib['comments'].split(' [')[0] for pos in root.findall('./PositionData/PositionInformation/')] 
-            self.PositionIndex      = [int(pos.attrib['index']) for pos in root.findall('./PositionData/PositionInformation/')] 
-            self.PositionSuffix     = [(self.PositionSuffix_standard[0:len(self.PositionSuffix_standard)-len(str(pos))] + str(pos)) for pos in self.PositionIndex]
-            
-            PositionDirs            = os.listdir(self.Directory)
-            self.PositionDirs       = [(self.Directory + pos ) for pos in PositionDirs if  os.path.isdir(self.Directory + pos) & (sum((possuffix in pos) for possuffix in self.PositionSuffix)==1)] #only list psotions if dir and contains specified position suffix
+    
+    
+    
+    def ReadMetaData_TATXML(self):                                              
+        #### Parse TATexp.XML ####
+        self.MovieDirectory             = self.Directory                                                                                                                                      
+        self.OutputDirectory            = self.MovieDirectory + '/Analysis/OnlineMovieAnalysis/'
+        self.WavelengthSuffix_standard  = 'w00'
+        self.TimeSuffix_standard        = 't00000'
+        self.ZstackSuffix_standard      = 'z000'
+        self.PositionSuffix_standard    = 'p0000'
+        
+        MovieNameSplit                  = self.Directory.split('/')
+        MovieNameSplit                  =[i for i in MovieNameSplit if i !=''] #'' is created for a '/' not followed by alphanumerical
+        self.MovieName                  =MovieNameSplit[len(MovieNameSplit)-1]   #After split and clean, the last entry should be MovieID
+        
+        #Create Ouput Directory        
+        self.CreateOutputdirectory()
+        
+        #actual parsing        
+        self.TATXML = ET.parse(self.Directory + '/' + self.TATXML_File[0]).getroot()
+        root = self.TATXML                       
+        self.PositionCount      = int(root.find('./PositionCount').attrib['count'])
+        self.PositionX          = [float(pos.attrib['posX']) for pos in root.findall('./PositionData/PositionInformation/')]
+        self.PositionY          = [float(pos.attrib['posY']) for pos in root.findall('./PositionData/PositionInformation/')]  
+        self.PositionCondition  = [pos.attrib['comments'].split('] ')[1] for pos in root.findall('./PositionData/PositionInformation/')] 
+        self.PositionName       = [pos.attrib['comments'].split(' [')[0] for pos in root.findall('./PositionData/PositionInformation/')] 
+        self.PositionIndex      = [int(pos.attrib['index']) for pos in root.findall('./PositionData/PositionInformation/')] 
+        self.PositionSuffix     = [(self.PositionSuffix_standard[0:len(self.PositionSuffix_standard)-len(str(pos))] + str(pos)) for pos in self.PositionIndex]
+        
+        #Create PositonFolder list
+        PositionDirs            = os.listdir(self.Directory)
+        self.PositionDirs       = [(self.MovieDirectory + pos ) for pos in PositionDirs if  os.path.isdir(self.MovieDirectory + pos) & (sum((possuffix in pos) for possuffix in self.PositionSuffix)==1)] #only list positions if dir and contains specified position suffix
+        
+        #Create Trackers of Progress and IDs
+        self.lastTPchecked      = [0 for i in self.PositionIndex] #to check last iterated TP per Position
+        self.WavelengthCount    = int(root.find('./WavelengthCount').attrib['count']) 
+        self.WavelengthComment  = [wl.attrib['Comment'] for wl in root.findall('./WavelengthData/WavelengthInformation/')]
+        self.WavelengthSuffix   = [(self.WavelengthSuffix_standard[0:len(self.WavelengthSuffix_standard)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]       
+        
+        #Get WL suffix for Segment and Quantifications
+        self.GetWLsuffix_SegmentAndQuant()
+    
+        
+    def ReadMetaData_Alternative(self): 
+        #### Alternative MetaData parsing ####
+        
+        with open(self.Directory + '/' + self.MetaData_File[0]) as csvfile:
+            reader = csv.reader(csvfile, delimiter = self.Delimiter)
+            for row in reader:
+                print(row)
+        
+        #We already checked that MetaData.txt is available
+        #so read it in
+        
+        
+        self.MovieName                 = None
+        self.MovieDirectory            = self.Directory                                                                                                                            
+        self.OutputDirectory           = self.MovieDirectory + '/Analysis/OnlineMovieAnalysis/'
+        self.WavelengthSuffix_standard = 'w00'
+        self.TimeSuffix_standard       = 't00000'
+        self.ZstackSuffix_standard     = 'z000'
+        self.PositionSuffix_standard   = 'p0000'
+        
+        self.WavelengthCount    = None
+        self.WavelengthComment  = None
+        # self.PositionX          = None
+        # self.PositionY          = None
+        # self.PositionCondition  = None
+        # self.PositionName       = None
+        # self.PositionIndex      = None
+        self.WavelengthCount    = None
+        self.WavelengthComment  = None
+        self.WavelengthSuffix   = None
+        self.OutputDirectory    = None
 
-            self.lastTPchecked      = [0 for i in self.PositionIndex] #to check last iterated TP per Position
-            self.WavelengthCount    = int(root.find('./WavelengthCount').attrib['count']) 
-            self.WavelengthComment  = [wl.attrib['Comment'] for wl in root.findall('./WavelengthData/WavelengthInformation/')]
-            self.WavelengthSuffix   = [(self.WavelengthSuffix_standard[0:len(self.WavelengthSuffix_standard)-len(str(wl))] + str(wl)) for wl in range(0,self.WavelengthCount)]      
-
+    def GetWLsuffix_SegmentAndQuant(self):
         #### which WL should be used for Segmentation or Quant ####
         #Check if Comment Or Suffix was provided by User
         SegmentSuffix   =  [check.lower() for check in self.Wavelength_Segment if check.lower() in self.WavelengthSuffix] #provided as Wavelength file name suffix
@@ -105,9 +151,17 @@ class qTLExperiment:
             self.WavelengthSuffix_Quant     = [self.WavelengthSuffix[i] for i in Comment_Idx]
         else:
             print('Error: Please Provide at least one available Wavelength in Movie for Quantification with variable \'Wavelength_Quant\'! ' +
-                  'Wavelengths available: ' + ', '.join(self.WavelengthComment))
+                  'Wavelengths available: ' + ', '.join(self.WavelengthComment))          
          
-            
+    def CreateOutputdirectory(self):
+        if not os.path.isdir(self.OutputDirectory):
+            try:
+                os.mkdir(self.OutputDirectory)
+            except OSError:
+                print ("Creation of Output directory %s failed" % self.OutputDirectory)
+            else:
+                print ("Successfully created Output directory %s " % self.OutputDirectory)
+                
     def CreateIterable(self): 
         #Get Segmentation Images per position 
         #This will create a List with image names, or if multiple images found per position a list of lists, with a list for every position
@@ -151,15 +205,16 @@ def CreateIterator(self, currentPosition_Index):
  '''       
 #ExperimentDir=filedialog.askdirectory(title="########### PLEASE SELECT Working Directory ###########") #Should contain MetaData File
 
+#Test for Alternative.xml
+Directory   ='N:/schroeder/Data/AW/PAPER-OMAwithDS/Leica/200301GC50'
+Mov         = qTLExperiment(Directory, delimiter='\t')
 
-#Test
-MovieName   = '200708AW11_16bit'
+
+
+
+#Test for TATexp.xml
 MovieDir    = 'T:/TimelapseData/16bit/AW_donotdelete_16bit/200708AW11_16bit/'
-Mov         = qTLExperiment(MovieDir, MovieName, ImageFormat='.png',  Wavelength_Segment= 'BF',Wavelength_Quant= ['Rab11-Al488', 'Itgb4-PE','LysobriteNIR'])
-
-
-Mov.CheckType()
-Mov.ReadInMetaData()
+Mov         = qTLExperiment(MovieDir, ImageFormat='.png',  Wavelength_Segment= 'BF',Wavelength_Quant= ['Rab11-Al488', 'Itgb4-PE','LysobriteNIR'])
 
 #Check for available images per position
 start_time = time.time()
@@ -178,7 +233,7 @@ start_time = time.time()
 Mov.UpdateIterable()
 print("--- %s seconds ---" % (time.time() - start_time))
 
-#Should be emptie now
+#Should be empty now
 Mov.Position2beIterated
 
 #Works
