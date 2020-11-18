@@ -136,7 +136,6 @@ class qTLExperiment:
                 if row[0] == 'PositionSuffix_standard':
                     self.PositionSuffix_standard    = row[1]
                     
-
                     
         #Check if wavelengthSuffix is parsed with or without 0 place holders  and get Segment and QUant suffixes   
         NumberOfPlaceholders_WLSuffix    = self.WavelengthSuffix_standard.count('0')
@@ -200,7 +199,6 @@ class qTLExperiment:
         if bool(self.Positionsfound): # True if position dirs found
             self.CreatePositionIterableFromDirs()
         else:
-            #Create PositionIterable from Files. 
             self.CreatePositionIterableFromFiles()
                 
 
@@ -293,14 +291,82 @@ class qTLExperiment:
     def CreatePositionIterableFromFiles(self):
         #Find Segmentation Images per position if all images are dumped in same folder
         # and sort them in lists of lists --> This will be your Iterable
-        #This will create a List with image names, or if multiple images found per position a list of lists, with a list for every position
-        #self.Position2beIterated = [glob.glob(pos + '/*' + self.WavelengthSuffix_Segment[0] + '*' + self.ImageFormat) for pos in self.PositionDirs]
         
         #Need to strip TP suffix from potential place holders for the following regex for sortin tps numerically
-        NumberOfPlaceholders_TPSuffix    = self.TimeSuffix_standard.count('0') 
-        TPSuffix_Stripped                = self.TimeSuffix_standard[0:(len(self.TimeSuffix_standard)-NumberOfPlaceholders_TPSuffix)]
-     
+        NumberOfPlaceholders_TPSuffix   = self.TimeSuffix_standard.count('0') 
+        TPSuffix_Stripped               = self.TimeSuffix_standard[0:(len(self.TimeSuffix_standard)-NumberOfPlaceholders_TPSuffix)]
+        
+        #Need to strip Pos from potential place holders for regex to sort positions numerically
+        NumberOfPlaceholders_PosSuffix  = self.PositionSuffix_standard.count('0')
+        PosSuffix_Stripped              = self.PositionSuffix_standard[0:(len(self.PositionSuffix_standard)-NumberOfPlaceholders_PosSuffix)]
+        
+        AllFilesFound                   = os.listdir(self.MovieDirectory)
+        AllPositionsFound               = [re.findall(PosSuffix_Stripped+'[0-9]+',fi)[0] for fi in AllFilesFound if PosSuffix_Stripped in fi]
+        AllPositionsFound_Unique        = list(set(AllPositionsFound))
+        
+        #These two now have same length and order
+        AllPositionsFound_Unique.sort()
+        AllPositionsFound_Index         = [int(re.findall('[0-9]+',pos)[0]) for pos in AllPositionsFound_Unique]
+        
+        #Now Create or Append Position Index list
+        if not bool(self.PositionIndex): #not yet intialized, create positionwise tracker
+            self.PositionIndex      = [pos for pos in range(0,max(AllPositionsFound_Index)+1)]
+            self.lastTPchecked      = [-1 for idx in self.PositionIndex]
+            self.PositionDirs       = [None if pos not in AllPositionsFound_Index else '' for pos in self.PositionIndex] #when '' we kan just add it to DIrectory string later, for reading the data an.           
+        else: # if already exists, check if new Positions were found
+            NewPositions_Index      = [pos for pos in AllPositionsFound_Index if pos not in self.PositionIndex]
+            #if new positions have been added, append them to lastTPchecked, PositionDirs_Sorted and PositionsIndex 
+            ExtendedPositionIndex   = [pos for pos in range(min(self.PositionIndex + NewPositions_Index),max(self.PositionIndex + NewPositions_Index)+1)]
+            ExtendedlastTPChecked   = [-1 for pos in ExtendedPositionIndex]
+            ExtendedPositionDirs    = [None for pos in ExtendedPositionIndex]
             
+            for i in self.PositionIndex:                            #transfer old positionwise data
+                ExtendedlastTPChecked[i] = self.lastTPchecked[i]
+                ExtendedPositionDirs[i]  = self.PositionDirs[i]
+                
+            for j in range(0,len(NewPositions_Index)):            #Add new positionwise data
+                ExtendedPositionDirs[NewPositions_Index[j]] = ''
+            
+            
+            ##### These three lists + Positions2beIteratred MUST have same length ######
+            self.PositionIndex = ExtendedPositionIndex
+            self.lastTPchecked = ExtendedlastTPChecked
+            self.PositionDirs  = ExtendedPositionDirs    
+                
+        #create Iterable
+        self.Position2beIterated = [[] for idx in self.PositionIndex]
+        
+        for pos in self.PositionIndex:
+            possuffix                       = PosSuffix_Stripped + '0'*NumberOfPlaceholders_PosSuffix 
+            possuffix                       = possuffix[0:(len(possuffix)-NumberOfPlaceholders_PosSuffix)] + str(pos)
+            self.Position2beIterated[pos]  = [img for img in AllFilesFound if possuffix in img]
+            
+        
+        #Now make sure that files are in correct order
+        for i in range(0,len(self.Position2beIterated)):
+            #Use Possuffix to grep and then order images per FoV
+            #Only if position dir exists and contains images
+            if bool(self.Position2beIterated[i]): #false if emtpy
+                #only check for images to be segmented
+                self.Position2beIterated[i]         = [img for img in self.Position2beIterated[i] if (self.WavelengthSuffix_Segment[0] in img) & (self.ImageFormat in img) ]
+                ImagesInPosition2beIterated         = self.Position2beIterated[i]
+                #sort them increasingly by timepoint after extracting tp info from filename using regular expression
+                ToBeSorted_TimePoints               =  [re.findall(TPSuffix_Stripped+'[0-9]+',tp)[0] for tp in ImagesInPosition2beIterated]
+                #get rid of tp suffix for numerical sorting and convert to int
+                ToBeSorted_TimePoints               =  [int(tp.replace(TPSuffix_Stripped,'')) for tp in ToBeSorted_TimePoints]
+                #"decorate, sort, undecorate" idiom
+                TPs_Sorted, ImagesInPosition_Sorted = (list(t) for t in zip(*sorted(zip(ToBeSorted_TimePoints, ImagesInPosition2beIterated))))
+                
+                #Only use Images whose TPs that have not been tracked yet]
+                lastseenTPofPosition        = self.lastTPchecked[i] 
+                TPs_Sorted_SubsetIndex      = [idx for idx in range(0,len(TPs_Sorted)) if TPs_Sorted[idx] > lastseenTPofPosition ]
+                #Reassign sorted entry that is now in correct temporal order
+                ImagesInPosition_Sorted     = [ImagesInPosition_Sorted[idx] for idx in TPs_Sorted_SubsetIndex]
+                self.Position2beIterated[i] = ImagesInPosition_Sorted
+        
+        
+        
+        
     def TrackIterable(self, currentPosition_Index,currentTP):
         #currentTP will be parsed from image name
         #Register the lastTPChecked per Position and clear the respective Position2beIterated entry
@@ -324,13 +390,23 @@ class qTLExperiment:
 #Test for Alternative.xml
 Directory   ='N:/schroeder/Data/AW/PAPER-OMAwithDS/Leica/200301GC50'
 Mov1         = qTLExperiment(Directory, delimiter='\t',Wavelength_Segment= 'BF',Wavelength_Quant= ['BF','APC'])
-
 Mov1.ScanPositionsAndCreateIterable()
 #Works and can be updated
 
+Directory   ='N:/schroeder/Data/AW/PAPER-OMAwithDS/NIS TIFF series/nd002'
+Mov2         = qTLExperiment(Directory, delimiter='\t',Wavelength_Segment= 'BF',Wavelength_Quant= ['BF','APC'])
+Mov2.ScanPositionsAndCreateIterable()
+Mov2.Position2beIterated
+#Works and can be updated
+
+
 #Test for TATexp.xml
 MovieDir    = 'T:/TimelapseData/16bit/AW_donotdelete_16bit/200708AW11_16bit/'
-Mov2         = qTLExperiment(MovieDir, ImageFormat='.png',  Wavelength_Segment= 'BF',Wavelength_Quant= ['Rab11-Al488', 'Itgb4-PE','LysobriteNIR'])
+Mov3         = qTLExperiment(MovieDir, ImageFormat='.png',  Wavelength_Segment= 'BF',Wavelength_Quant= ['Rab11-Al488', 'Itgb4-PE','LysobriteNIR'])
+Mov3.ScanPositionsAndCreateIterable()
+Mov3.Position2beIterated
+
+
 
 #Check for available images per position
 start_time = time.time()
